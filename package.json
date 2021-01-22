@@ -1,0 +1,23 @@
+{
+  "name": "github-actions-code-engine",
+  "version": "0.0.1",
+  "description": "Sample project that demonstrates how to use GitHub Actions to trigger a build in and a deployment to IBM CLoud Code Engine",
+  "main": "server.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SaschaSchwarze0/github-actions-code-engine.git"
+  },
+  "keywords": [
+    "ibm-cloud",
+    "code-engine"
+  ],
+  "author": "Sascha Schwarze <schwarzs@de.ibm.com>",
+  "license": "BSD-3-Clause",
+  "bugs": {
+    "url": "https://github.com/SaschaSchwarze0/github-actions-code-engine/issues"
+  },
+  "homepage": "https://github.com/SaschaSchwarze0/github-actions-code-engine#readme"
+}
