@@ -1,0 +1,72 @@
+name: Build & Deploy
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  build-deploy:
+    runs-on: ubuntu-20.04
+
+    env:
+      REGION: us-south
+      RESOURCE_GROUP: default
+
+    steps:
+      - name: Install IBM Cloud CLI
+        run: curl -sL https://raw.githubusercontent.com/IBM-Cloud/ibm-cloud-developer-tools/master/linux-installer/idt-installer | bash
+
+      - name: Install IBM Cloud Code Engine CLI plugin
+        run: ibmcloud plugin install code-engine
+
+      - name: Login IBM Cloud
+        run: ibmcloud login -a https://cloud.ibm.com -c "${{ secrets.IBMCLOUD_ACCOUNT }}" -r "${REGION}" -g "${RESOURCE_GROUP}" --apikey "${{ secrets.IBMCLOUD_APIKEY }}"
+
+      - name: Connect to Code Engine project
+        run: |
+          CR_NAMESPACE=$(echo "${{ secrets.IBMCLOUD_ACCOUNT }}")
+          CR_NAMESPACE=${CR_NAMESPACE:0:30}
+          echo "${CR_NAMESPACE}" > CR_NAMESPACE
+          if ! ibmcloud code-engine project select -n github-actions ; then
+            # Ensure the existence of the Container Registry namespace
+            ibmcloud cr namespace-add -g "${RESOURCE_GROUP}" "${CR_NAMESPACE}" > /dev/null 2>&1
+
+            ibmcloud code-engine project create -n github-actions
+            ibmcloud code-engine registry create -n us-icr-io -s us.icr.io -u iamapikey -p "${{ secrets.IBMCLOUD_APIKEY }}"
+          fi
+
+      - name: Create or update Build
+        run: |
+          # restore variable
+          CR_NAMESPACE=$(cat CR_NAMESPACE)
+
+          # The repository name is the second part of the GITHUB_REPOSITORY
+          while IFS='/' read -ra ADDR; do
+            for i in "${ADDR[@]}"; do
+              REPOSITORY_NAME="${i}"
+            done
+          done <<< "${GITHUB_REPOSITORY}"
+          echo "Determined repository name: ${REPOSITORY_NAME}"
+          echo "${REPOSITORY_NAME}" > REPOSITORY_NAME
+
+          # Update or create the build
+          if ! ibmcloud code-engine build update -n "${REPOSITORY_NAME}" --commit "${GITHUB_SHA}" --image "us.icr.io/${CR_NAMESPACE}/${REPOSITORY_NAME}:${GITHUB_SHA}" ; then
+            ibmcloud code-engine build create -n "${REPOSITORY_NAME}" --src "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" --commit "${GITHUB_SHA}" --image "us.icr.io/${CR_NAMESPACE}/${REPOSITORY_NAME}:${GITHUB_SHA}" --registry-secret us-icr-io
+          fi
+
+      - name: Submit BuildRun and and wait for completion
+        run: |
+          # restore variable
+          REPOSITORY_NAME=$(cat REPOSITORY_NAME)
+
+          ibmcloud code-engine buildrun submit --build "${REPOSITORY_NAME}" --wait --wait-timeout 600
+
+      - name: Create or update application
+        run: |
+          # restore variables
+          CR_NAMESPACE=$(cat CR_NAMESPACE)
+          REPOSITORY_NAME=$(cat REPOSITORY_NAME)
+
+          if ! ibmcloud code-engine application update -n "${REPOSITORY_NAME}" --image "us.icr.io/${CR_NAMESPACE}/${REPOSITORY_NAME}:${GITHUB_SHA}" ; then
+            ibmcloud code-engine application create -n "${REPOSITORY_NAME}" --image "us.icr.io/${CR_NAMESPACE}/${REPOSITORY_NAME}:${GITHUB_SHA}" --registry-secret us-icr-io
+          fi
